@@ -18,7 +18,10 @@ class ViesError(RuntimeError):
 
 def check_vat(country_code: str, vat_number: str) -> VatCheckResult:
     clean_country = country_code.strip().upper()
-    clean_number = vat_number.replace(" ", "").replace(country_code, "", 1) if vat_number.upper().startswith(clean_country) else vat_number.replace(" ", "")
+
+    clean_number = vat_number.replace(" ", "")
+    if clean_number.upper().startswith(clean_country):
+        clean_number = clean_number[len(clean_country):]
 
     response = httpx.post(
         _VIES_URL,

@@ -87,3 +87,21 @@ def test_check_vat_strips_leading_country_prefix(monkeypatch):
     check_vat("PT", "PT123456789")
 
     assert captured["vatNumber"] == "123456789"
+
+
+def test_check_vat_strips_prefix_regardless_of_case(monkeypatch):
+    # regression: country_code lowercase + vat_number prefixed uppercase used to fail to strip,
+    # because the old code replaced using the raw (lowercase) country_code instead of the
+    # normalized uppercase one.
+    captured = {}
+
+    def fake_post(url, json, timeout):
+        captured.update(json)
+        return _FakeResponse(200, {"countryCode": "PT", "vatNumber": "123456789", "valid": True})
+
+    monkeypatch.setattr("tikdrop.ingestion.vies.httpx.post", fake_post)
+
+    check_vat("pt", "PT123456789")
+
+    assert captured["vatNumber"] == "123456789"
+    assert captured["countryCode"] == "PT"
