@@ -1,9 +1,13 @@
-"""First real (legal, free) slice of the Trend Hunter: pulls actual signals for a keyword from
-Google Trends (3 months of history in one call), stores them, then walks you through the parts
-that still have no automated source (PT competition, costs, supplier, logistics, compliance)
-and scores the candidate. If the recommendation is "test", it's saved to the local opportunities
-queue (status=queued_for_store) - our stand-in for "enters the store" until a real Store
-Generator / e-commerce integration exists.
+"""First real (legal, free) slice of the Trend Hunter: pulls actual signals for a keyword,
+following idea.pdf's core thesis - find it trending ABROAD first, then check if PT still has
+room. The Trend dimension is driven by worldwide Google Trends interest (3 months of history in
+one call); PT-only interest is checked separately just as a heads-up ("is this already known
+here?"), since PT search volume alone is usually too thin to say much on its own. Then walks
+you through the parts that still have no automated source (PT competition, costs, supplier -
+including whether it has an EU warehouse/fulfilment, logistics, compliance) and scores the
+candidate. If the recommendation is "test", it's saved to the local opportunities queue
+(status=queued_for_store) - our stand-in for "enters the store" until a real Store Generator /
+e-commerce integration exists.
 
 Reddit is wired in (src/tikdrop/ingestion/reddit.py) but only runs if REDDIT_CLIENT_ID and
 REDDIT_CLIENT_SECRET are set (Reddit currently requires a separate API-access approval before
@@ -71,11 +75,34 @@ def main() -> None:
     store = SignalStore()
 
     print(f"Fetching real signals for '{keyword}'...")
+
+    # The core idea (idea.pdf): find it trending ABROAD first, then check if PT still has
+    # room. Worldwide interest is the Trend dimension's main signal - PT-only search volume is
+    # usually too thin to say anything (a product can be huge on TikTok globally and still show
+    # 0 on Google Trends PT, simply because Portugal is a small market).
     signals = []
     try:
-        signals += fetch_google_trends_signal(keyword)
+        signals += fetch_google_trends_signal(keyword, geo="")  # "" = worldwide
     except Exception as exc:
-        print(f"  Google Trends fetch failed: {exc}")
+        print(f"  Google Trends (worldwide) fetch failed: {exc}")
+
+    try:
+        pt_signals = fetch_google_trends_signal(keyword, geo="PT")
+    except Exception as exc:
+        print(f"  Google Trends (PT) fetch failed: {exc}")
+        pt_signals = []
+
+    # Google Trends normalizes each query's 0-100 scale independently per geo/time window, so
+    # the worldwide and PT numbers are NOT directly comparable in magnitude - only how many days
+    # show any measurable interest at all is roughly comparable across the two.
+    if not pt_signals:
+        print("  PT: 0 days with measurable interest - looks like it hasn't caught on here yet (the opportunity gap).")
+    elif not signals:
+        print(f"  PT: interest on {len(pt_signals)} day(s), but the worldwide check found nothing to compare against.")
+    elif len(pt_signals) < len(signals) / 2:
+        print(f"  PT: interest on only {len(pt_signals)}/{len(signals)} of the days worldwide showed interest - still looks like an early opportunity.")
+    else:
+        print(f"  PT: interest on {len(pt_signals)}/{len(signals)} of the days worldwide showed interest - may already be fairly known here.")
 
     if os.environ.get("REDDIT_CLIENT_ID") and os.environ.get("REDDIT_CLIENT_SECRET"):
         try:
@@ -87,7 +114,7 @@ def main() -> None:
 
     if signals:
         store.save(keyword, signals)
-        print(f"  Google Trends: {len(signals)} day(s) with measurable interest in the last 3 months.")
+        print(f"  Collected {len(signals)} signal(s) this run (worldwide Google Trends + Reddit, if available).")
     else:
         print("  No signals found this run - you can still continue with manual data below.")
 
