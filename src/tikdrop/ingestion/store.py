@@ -1,106 +1,141 @@
-"""Local SQLite store for trend signal snapshots. Kept deliberately simple (one file,
-tikdrop.db, at the repo root) - it exists so growth can be measured across repeated runs
-(development_guide.pdf section 6: keep origin + timestamp of every signal, for audit and
-reprocessing) without needing Postgres/an API yet.
+"""Persistence for trend signal snapshots and scored opportunities, via SQLAlchemy Core so the
+same code works against local SQLite (default - one file, tikdrop.db, at the repo root, zero
+setup) and a real hosted Postgres (set DATABASE_URL, e.g. a free Neon/Supabase instance) once
+deploying the dashboard for real. development_guide.pdf section 6: keep origin + timestamp of
+every signal, for audit and reprocessing.
 """
 
-import sqlite3
+import os
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import List, Optional, Sequence
 
+from sqlalchemy import Column, DateTime, Float, Integer, MetaData, String, Table, Text, create_engine, insert, select, update
+from sqlalchemy.engine import Engine
+
 from tikdrop.schemas.score import ProductScoreInput, ProductScoreResult
 from tikdrop.schemas.trend import RawSignal, TrendInput
 
-DEFAULT_DB_PATH = str(Path(__file__).resolve().parents[3] / "tikdrop.db")
+DEFAULT_SQLITE_PATH = str(Path(__file__).resolve().parents[3] / "tikdrop.db")
+DEFAULT_DATABASE_URL = f"sqlite:///{DEFAULT_SQLITE_PATH}"
 
 # A week only counts toward "sustained" if it had real average engagement, not just one row
 # from a single quiet day - otherwise backfilled history would count every week regardless of
 # whether the product actually showed up that week.
 _SUSTAINED_WEEK_ENGAGEMENT_THRESHOLD = 0.15
 
-_SCHEMA = """
-CREATE TABLE IF NOT EXISTS trend_signal_snapshots (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    candidate_key TEXT NOT NULL,
-    source TEXT NOT NULL,
-    metric_value REAL NOT NULL,
-    engagement_proxy REAL NOT NULL,
-    raw_text TEXT,
-    url TEXT,
-    captured_at TEXT NOT NULL
-);
+_STATUS_BY_RECOMMENDATION = {"test": "queued_for_store", "watch": "watching", "reject": "rejected"}
 
-CREATE TABLE IF NOT EXISTS opportunities (
-    candidate_key TEXT PRIMARY KEY,
-    total_score REAL NOT NULL,
-    recommendation TEXT NOT NULL,
-    recommendation_reason TEXT NOT NULL,
-    status TEXT NOT NULL,
-    scored_at TEXT NOT NULL,
-    result_json TEXT NOT NULL,
-    input_json TEXT
-);
-"""
+metadata = MetaData()
+
+trend_signal_snapshots = Table(
+    "trend_signal_snapshots",
+    metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("candidate_key", String, nullable=False),
+    Column("source", String, nullable=False),
+    Column("metric_value", Float, nullable=False),
+    Column("engagement_proxy", Float, nullable=False),
+    Column("raw_text", Text),
+    Column("url", Text),
+    Column("captured_at", DateTime, nullable=False),
+)
+
+opportunities = Table(
+    "opportunities",
+    metadata,
+    Column("candidate_key", String, primary_key=True),
+    Column("total_score", Float, nullable=False),
+    Column("recommendation", String, nullable=False),
+    Column("recommendation_reason", Text, nullable=False),
+    Column("status", String, nullable=False),
+    Column("scored_at", DateTime, nullable=False),
+    Column("result_json", Text, nullable=False),
+    Column("input_json", Text),
+)
 
 
-def _fmt(dt: datetime) -> str:
-    return dt.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+def _naive_utc(dt: datetime) -> datetime:
+    return dt.astimezone(timezone.utc).replace(tzinfo=None)
+
+
+def _make_engine(db_path: Optional[str], database_url: Optional[str]) -> Engine:
+    if database_url:
+        url = database_url
+    elif db_path:
+        url = "sqlite://" if db_path == ":memory:" else f"sqlite:///{db_path}"
+    else:
+        url = os.environ.get("DATABASE_URL") or DEFAULT_DATABASE_URL
+
+    kwargs: dict = {}
+    connect_args: dict = {}
+    if url.startswith("sqlite") and (url == "sqlite://" or ":memory:" in url):
+        # in-memory SQLite is connection-local by default - without a shared pool, every new
+        # connection() call would see a *different*, empty database.
+        from sqlalchemy.pool import StaticPool
+
+        kwargs["poolclass"] = StaticPool
+        connect_args["check_same_thread"] = False
+
+    return create_engine(url, connect_args=connect_args, **kwargs)
 
 
 class SignalStore:
-    def __init__(self, db_path: str = DEFAULT_DB_PATH) -> None:
-        self._conn = sqlite3.connect(db_path)
-        self._conn.executescript(_SCHEMA)
-        self._conn.commit()
+    def __init__(self, db_path: Optional[str] = None, database_url: Optional[str] = None) -> None:
+        self._engine = _make_engine(db_path, database_url)
+        metadata.create_all(self._engine)
 
     def save(self, candidate_key: str, signals: Sequence[RawSignal], captured_at: datetime = None) -> None:
+        if not signals:
+            return
         default_captured_at = captured_at or datetime.now(timezone.utc)
         rows = [
-            (
-                candidate_key,
-                s.source,
-                s.metric_value,
-                s.engagement_proxy,
-                s.raw_text,
-                s.url,
-                _fmt(s.captured_at or default_captured_at),
+            dict(
+                candidate_key=candidate_key,
+                source=s.source,
+                metric_value=s.metric_value,
+                engagement_proxy=s.engagement_proxy,
+                raw_text=s.raw_text,
+                url=s.url,
+                captured_at=_naive_utc(s.captured_at or default_captured_at),
             )
             for s in signals
         ]
-        self._conn.executemany(
-            "INSERT INTO trend_signal_snapshots "
-            "(candidate_key, source, metric_value, engagement_proxy, raw_text, url, captured_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
-            rows,
-        )
-        self._conn.commit()
+        with self._engine.begin() as conn:
+            conn.execute(insert(trend_signal_snapshots), rows)
 
     def build_trend_input(self, candidate_key: str, now: datetime = None) -> TrendInput:
         now = now or datetime.now(timezone.utc)
-        window_start = _fmt(now - timedelta(days=7))
-        prior_window_start = _fmt(now - timedelta(days=14))
+        naive_now = _naive_utc(now)
+        window_start = naive_now - timedelta(days=7)
+        prior_window_start = naive_now - timedelta(days=14)
 
-        cur = self._conn.execute(
-            "SELECT source, engagement_proxy, captured_at FROM trend_signal_snapshots "
-            "WHERE candidate_key = ? AND captured_at >= ?",
-            (candidate_key, prior_window_start),
+        with self._engine.connect() as conn:
+            all_rows = conn.execute(
+                select(
+                    trend_signal_snapshots.c.source,
+                    trend_signal_snapshots.c.engagement_proxy,
+                    trend_signal_snapshots.c.captured_at,
+                ).where(trend_signal_snapshots.c.candidate_key == candidate_key)
+            ).fetchall()
+
+        recent = [r for r in all_rows if r.captured_at >= window_start]
+        prior = [r for r in all_rows if prior_window_start <= r.captured_at < window_start]
+
+        distinct_sources = len({r.source for r in recent})
+        avg_engagement = (sum(r.engagement_proxy for r in recent) / len(recent)) if recent else 0.0
+
+        # Computed in Python (not SQL) on purpose - keeps this portable across SQLite/Postgres
+        # instead of relying on a dialect-specific date-bucketing function like strftime.
+        weekly_engagement: dict = {}
+        for r in all_rows:
+            week_key = r.captured_at.isocalendar()[:2]  # (ISO year, ISO week)
+            weekly_engagement.setdefault(week_key, []).append(r.engagement_proxy)
+        weeks_sustained = sum(
+            1
+            for values in weekly_engagement.values()
+            if (sum(values) / len(values)) >= _SUSTAINED_WEEK_ENGAGEMENT_THRESHOLD
         )
-        rows = cur.fetchall()
-
-        recent = [r for r in rows if r[2] >= window_start]
-        prior = [r for r in rows if r[2] < window_start]
-
-        distinct_sources = len({r[0] for r in recent})
-        avg_engagement = (sum(r[1] for r in recent) / len(recent)) if recent else 0.0
-
-        cur = self._conn.execute(
-            "SELECT strftime('%Y-%W', captured_at) AS wk, AVG(engagement_proxy) AS avg_eng "
-            "FROM trend_signal_snapshots WHERE candidate_key = ? "
-            "GROUP BY wk HAVING avg_eng >= ?",
-            (candidate_key, _SUSTAINED_WEEK_ENGAGEMENT_THRESHOLD),
-        )
-        weeks_sustained = len(cur.fetchall())
 
         return TrendInput(
             signal_count_7d=len(recent),
@@ -118,63 +153,68 @@ class SignalStore:
         now: datetime = None,
     ) -> None:
         now = now or datetime.now(timezone.utc)
-        status = {"test": "queued_for_store", "watch": "watching", "reject": "rejected"}[result.recommendation]
-        self._conn.execute(
-            "INSERT INTO opportunities "
-            "(candidate_key, total_score, recommendation, recommendation_reason, status, scored_at, result_json, input_json) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?) "
-            "ON CONFLICT(candidate_key) DO UPDATE SET "
-            "total_score=excluded.total_score, recommendation=excluded.recommendation, "
-            "recommendation_reason=excluded.recommendation_reason, status=excluded.status, "
-            "scored_at=excluded.scored_at, result_json=excluded.result_json, input_json=excluded.input_json",
-            (
-                candidate_key,
-                result.total_score,
-                result.recommendation,
-                result.recommendation_reason,
-                status,
-                _fmt(now),
-                result.model_dump_json(),
-                product_input.model_dump_json() if product_input else None,
-            ),
+        values = dict(
+            total_score=result.total_score,
+            recommendation=result.recommendation,
+            recommendation_reason=result.recommendation_reason,
+            status=_STATUS_BY_RECOMMENDATION[result.recommendation],
+            scored_at=_naive_utc(now),
+            result_json=result.model_dump_json(),
+            input_json=product_input.model_dump_json() if product_input else None,
         )
-        self._conn.commit()
+
+        with self._engine.begin() as conn:
+            existing = conn.execute(
+                select(opportunities.c.candidate_key).where(opportunities.c.candidate_key == candidate_key)
+            ).fetchone()
+            if existing:
+                conn.execute(
+                    update(opportunities).where(opportunities.c.candidate_key == candidate_key).values(**values)
+                )
+            else:
+                conn.execute(insert(opportunities).values(candidate_key=candidate_key, **values))
 
     def list_opportunities(self, status: str = None) -> List[dict]:
+        cols = [
+            opportunities.c.candidate_key,
+            opportunities.c.total_score,
+            opportunities.c.recommendation,
+            opportunities.c.recommendation_reason,
+            opportunities.c.status,
+            opportunities.c.scored_at,
+        ]
+        stmt = select(*cols).order_by(opportunities.c.total_score.desc())
         if status:
-            cur = self._conn.execute(
-                "SELECT candidate_key, total_score, recommendation, recommendation_reason, status, scored_at "
-                "FROM opportunities WHERE status = ? ORDER BY total_score DESC",
-                (status,),
-            )
-        else:
-            cur = self._conn.execute(
-                "SELECT candidate_key, total_score, recommendation, recommendation_reason, status, scored_at "
-                "FROM opportunities ORDER BY total_score DESC"
-            )
-        columns = [d[0] for d in cur.description]
-        return [dict(zip(columns, row)) for row in cur.fetchall()]
+            stmt = stmt.where(opportunities.c.status == status)
+
+        with self._engine.connect() as conn:
+            rows = conn.execute(stmt).mappings().fetchall()
+
+        return [
+            {**dict(r), "scored_at": r["scored_at"].strftime("%Y-%m-%d %H:%M:%S")}
+            for r in rows
+        ]
 
     def get_opportunity_detail(self, candidate_key: str) -> Optional[ProductScoreResult]:
-        cur = self._conn.execute(
-            "SELECT result_json FROM opportunities WHERE candidate_key = ?", (candidate_key,)
-        )
-        row = cur.fetchone()
+        with self._engine.connect() as conn:
+            row = conn.execute(
+                select(opportunities.c.result_json).where(opportunities.c.candidate_key == candidate_key)
+            ).fetchone()
         if row is None:
             return None
         return ProductScoreResult.model_validate_json(row[0])
 
     def get_candidate_input(self, candidate_key: str) -> Optional[ProductScoreInput]:
-        cur = self._conn.execute(
-            "SELECT input_json FROM opportunities WHERE candidate_key = ?", (candidate_key,)
-        )
-        row = cur.fetchone()
+        with self._engine.connect() as conn:
+            row = conn.execute(
+                select(opportunities.c.input_json).where(opportunities.c.candidate_key == candidate_key)
+            ).fetchone()
         if row is None or row[0] is None:
             return None
         return ProductScoreInput.model_validate_json(row[0])
 
     def close(self) -> None:
-        self._conn.close()
+        self._engine.dispose()
 
     def __enter__(self) -> "SignalStore":
         return self

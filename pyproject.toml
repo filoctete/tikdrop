@@ -9,6 +9,10 @@ description = "TikTok Made Me Buy It - Portugal: Product Intelligence engine (sc
 requires-python = ">=3.9"
 dependencies = [
     "pydantic>=2.0,<3.0",
+    "sqlalchemy>=2.0",
+    # greenlet>=3.2 has no prebuilt wheel for some Python/platform combos (e.g. cp39-win_amd64)
+    # and fails to build from source without a C compiler - pin below that.
+    "greenlet<3.2",
 ]
 
 [project.optional-dependencies]
@@ -25,6 +29,7 @@ ingestion = [
 api = [
     "fastapi>=0.110",
     "uvicorn[standard]>=0.29",
+    "psycopg[binary]>=3.1",
 ]
 all = [
     "tikdrop[dev,groq,ingestion,api]",
