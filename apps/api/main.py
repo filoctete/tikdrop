@@ -7,6 +7,7 @@ Run locally: uvicorn apps.api.main:app --reload --app-dir D:/TikDrop
 """
 
 import os
+from pathlib import Path
 from typing import Generator, List, Optional
 
 from fastapi import Depends, FastAPI, HTTPException
@@ -16,6 +17,23 @@ from pydantic import BaseModel, Field
 from tikdrop.ingestion import SignalStore, ViesError, check_vat, fetch_google_trends_signal
 from tikdrop.schemas.score import ProductScoreInput, ProductScoreResult
 from tikdrop.scoring import ProductScoringEngine, build_quick_score_input
+
+
+def _load_dotenv_if_present() -> None:
+    # Local dev convenience only - deployed platforms (Render, etc.) set real env vars, so this
+    # is a no-op there since no .env file exists in that environment.
+    env_path = Path(__file__).resolve().parents[2] / ".env"
+    if not env_path.exists():
+        return
+    for line in env_path.read_text().splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        os.environ.setdefault(key.strip(), value.strip())
+
+
+_load_dotenv_if_present()
 
 app = FastAPI(title="TikDrop Admin API", version="0.1.0")
 
