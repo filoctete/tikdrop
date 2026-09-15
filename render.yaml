@@ -1,0 +1,15 @@
+# Deploys apps/api on Render.com's free web service tier. Not needed for local dev.
+# Set DATABASE_URL (a free Neon/Supabase Postgres) and ALLOWED_ORIGINS (your Vercel URL)
+# as environment variables in the Render dashboard after the first deploy.
+services:
+  - type: web
+    name: tikdrop-api
+    runtime: python
+    plan: free
+    buildCommand: pip install -e ".[api]"
+    startCommand: uvicorn apps.api.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: ALLOWED_ORIGINS
+        sync: false
