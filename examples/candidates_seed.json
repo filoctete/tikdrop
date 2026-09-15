@@ -1,0 +1,38 @@
+[
+  {
+    "name": "wooden wireless mouse",
+    "product_cost": 9.50,
+    "sale_price": 24.99,
+    "weight_grams": 120,
+    "demo_video_feasibility": 7.5,
+    "ugc_potential": 6.0,
+    "source": "Spocket public trending page (Tech Accessories), checked 2026-09-15"
+  },
+  {
+    "name": "wireless sport bluetooth earbuds",
+    "product_cost": 24.50,
+    "sale_price": 39.99,
+    "weight_grams": 60,
+    "demo_video_feasibility": 6.0,
+    "ugc_potential": 5.0,
+    "source": "Spocket public trending page (Tech Accessories), checked 2026-09-15"
+  },
+  {
+    "name": "steamy cat brush",
+    "product_cost": 16.12,
+    "sale_price": 29.99,
+    "weight_grams": 200,
+    "demo_video_feasibility": 8.5,
+    "ugc_potential": 7.5,
+    "source": "Spocket public trending page (Pets), checked 2026-09-15"
+  },
+  {
+    "name": "pet nail clippers with led light",
+    "product_cost": 11.90,
+    "sale_price": 22.99,
+    "weight_grams": 100,
+    "demo_video_feasibility": 8.0,
+    "ugc_potential": 6.5,
+    "source": "Spocket public trending page (Pets), checked 2026-09-15"
+  }
+]
