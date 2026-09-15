@@ -76,6 +76,12 @@ def _make_engine(db_path: Optional[str], database_url: Optional[str]) -> Engine:
 
         kwargs["poolclass"] = StaticPool
         connect_args["check_same_thread"] = False
+    elif url.startswith("postgresql+psycopg"):
+        # Supabase's free tier only routes direct connections over IPv6, which most simple
+        # hosts (e.g. Render) can't reach - use its PgBouncer transaction-pooler instead. That
+        # pooler doesn't keep server-side state across statements, so psycopg's own prepared
+        # statement cache has to be disabled or queries intermittently fail.
+        connect_args["prepare_threshold"] = None
 
     return create_engine(url, connect_args=connect_args, **kwargs)
 
