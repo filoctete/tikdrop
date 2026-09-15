@@ -5,11 +5,14 @@ Run with:
   python examples/inbox.py                  # list everything
   python examples/inbox.py --status test     # filter by status: queued_for_store, watching, rejected
   python examples/inbox.py --detail "pet hair roller"
+  python examples/inbox.py --export opportunities.csv
 """
 
+import csv
 import sys
 
 from tikdrop.ingestion import SignalStore
+from tikdrop.scoring import WEIGHTS
 
 _STATUS_ALIASES = {"test": "queued_for_store", "watch": "watching", "reject": "rejected"}
 
@@ -49,9 +52,53 @@ def _print_detail(store: SignalStore, candidate_key: str) -> None:
         print(f"  Weight: {product_input.logistics.weight_grams}g, ships in ~{product_input.logistics.avg_shipping_days} days")
 
 
+def _export_csv(store: SignalStore, path: str) -> None:
+    opportunities = store.list_opportunities()
+    dimension_names = list(WEIGHTS)
+    fieldnames = [
+        "candidate_key", "total_score", "recommendation", "status", "scored_at",
+        *[f"dim_{d}" for d in dimension_names],
+        "sale_price", "product_cost", "pt_competitor_count", "differentiation_score",
+    ]
+
+    with open(path, "w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+
+        for o in opportunities:
+            row = {
+                "candidate_key": o["candidate_key"],
+                "total_score": round(o["total_score"], 2),
+                "recommendation": o["recommendation"],
+                "status": o["status"],
+                "scored_at": o["scored_at"],
+            }
+
+            detail = store.get_opportunity_detail(o["candidate_key"])
+            for d in dimension_names:
+                row[f"dim_{d}"] = round(detail.dimensions[d].raw_score, 2) if detail and d in detail.dimensions else ""
+
+            candidate_input = store.get_candidate_input(o["candidate_key"])
+            if candidate_input:
+                row["sale_price"] = candidate_input.costs.sale_price
+                row["product_cost"] = candidate_input.costs.product_cost
+                row["pt_competitor_count"] = candidate_input.portugal_opportunity.pt_competitor_count
+                row["differentiation_score"] = candidate_input.portugal_opportunity.differentiation_score
+
+            writer.writerow(row)
+
+    print(f"Exported {len(opportunities)} opportunity(ies) to {path}")
+
+
 def main() -> None:
     args = sys.argv[1:]
     store = SignalStore()
+
+    if "--export" in args:
+        idx = args.index("--export")
+        path = args[idx + 1] if idx + 1 < len(args) else "opportunities.csv"
+        _export_csv(store, path)
+        return
 
     if "--detail" in args:
         idx = args.index("--detail")
