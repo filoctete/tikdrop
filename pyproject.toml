@@ -22,6 +22,12 @@ ingestion = [
     "httpx>=0.27",
     "pytrends>=4.9",
 ]
+all = [
+    "tikdrop[dev,groq,ingestion]",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
