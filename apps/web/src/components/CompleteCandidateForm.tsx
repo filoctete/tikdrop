@@ -21,6 +21,8 @@ export default function CompleteCandidateForm({ candidateKey }: { candidateKey: 
         product_cost: Number(formData.get("product_cost")),
         sale_price: Number(formData.get("sale_price")),
         weight_grams: Number(formData.get("weight_grams")),
+        avg_shipping_days: Number(formData.get("avg_shipping_days")) || undefined,
+        listing_url: String(formData.get("listing_url") || "") || undefined,
       });
       router.refresh();
     } catch (err) {
@@ -55,6 +57,24 @@ export default function CompleteCandidateForm({ candidateKey }: { candidateKey: 
       <div className="flex flex-col">
         <label className="text-xs text-gray-500">Weight (g)</label>
         <input name="weight_grams" type="number" required className="w-20 rounded border border-gray-300 px-2 py-1 text-sm" />
+      </div>
+      <div className="flex flex-col">
+        <label className="text-xs text-gray-500">Shipping (days)</label>
+        <input
+          name="avg_shipping_days"
+          type="number"
+          placeholder="10"
+          className="w-24 rounded border border-gray-300 px-2 py-1 text-sm"
+        />
+      </div>
+      <div className="flex flex-col">
+        <label className="text-xs text-gray-500">Listing URL (the exact one you picked)</label>
+        <input
+          name="listing_url"
+          type="url"
+          placeholder="https://..."
+          className="w-64 rounded border border-gray-300 px-2 py-1 text-sm"
+        />
       </div>
       <button
         type="submit"

@@ -78,6 +78,7 @@ class QuickScoreRequest(BaseModel):
     demo_video_feasibility: float = Field(default=5.0, ge=0, le=10)
     ugc_potential: float = Field(default=5.0, ge=0, le=10)
     avg_shipping_days: float = Field(default=10.0, gt=0)
+    listing_url: Optional[str] = None
 
 
 class VatCheckRequest(BaseModel):
@@ -154,6 +155,7 @@ def quick_score(req: QuickScoreRequest, store: SignalStore = Depends(get_store))
         demo_video_feasibility=req.demo_video_feasibility,
         ugc_potential=req.ugc_potential,
         avg_shipping_days=req.avg_shipping_days,
+        listing_url=req.listing_url,
     )
 
     result = ProductScoringEngine.score(product_input)

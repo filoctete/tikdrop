@@ -74,6 +74,21 @@ export default async function OpportunityDetail({
             <dd>{input.logistics.avg_shipping_days} days</dd>
             <dt className="text-gray-500">VAT validated</dt>
             <dd>{input.supplier.vat_validated ? "Yes" : "No"}</dd>
+            {input.supplier.listing_url && (
+              <>
+                <dt className="text-gray-500">Supplier listing</dt>
+                <dd>
+                  <a
+                    href={input.supplier.listing_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-blue-600 hover:underline"
+                  >
+                    Open listing ↗
+                  </a>
+                </dd>
+              </>
+            )}
           </dl>
           <p className="mt-4 text-xs text-gray-400">
             PT competitors and differentiation are placeholders unless manually confirmed via

@@ -38,7 +38,7 @@ export interface ProductScoreInput {
     returns_cost_estimate: number;
     other_costs: number;
   };
-  supplier: Record<string, boolean>;
+  supplier: { listing_url: string | null } & Record<string, boolean>;
   logistics: {
     weight_grams: number;
     avg_shipping_days: number;
@@ -60,6 +60,7 @@ export interface QuickScoreRequest {
   demo_video_feasibility?: number;
   ugc_potential?: number;
   avg_shipping_days?: number;
+  listing_url?: string;
 }
 
 export interface VatCheckRequest {

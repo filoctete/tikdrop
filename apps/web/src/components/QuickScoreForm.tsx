@@ -22,6 +22,8 @@ export default function QuickScoreForm() {
         product_cost: Number(formData.get("product_cost")),
         sale_price: Number(formData.get("sale_price")),
         weight_grams: Number(formData.get("weight_grams")),
+        avg_shipping_days: Number(formData.get("avg_shipping_days")) || undefined,
+        listing_url: String(formData.get("listing_url") || "") || undefined,
       });
       setOpen(false);
       router.refresh();
@@ -96,6 +98,30 @@ export default function QuickScoreForm() {
           type="number"
           required
           className="w-24 rounded border border-gray-300 px-2 py-1 text-sm"
+        />
+      </div>
+      <div className="flex flex-col">
+        <label className="text-xs text-gray-500" htmlFor="avg_shipping_days">
+          Shipping (days)
+        </label>
+        <input
+          id="avg_shipping_days"
+          name="avg_shipping_days"
+          type="number"
+          placeholder="10"
+          className="w-24 rounded border border-gray-300 px-2 py-1 text-sm"
+        />
+      </div>
+      <div className="flex flex-col">
+        <label className="text-xs text-gray-500" htmlFor="listing_url">
+          Listing URL
+        </label>
+        <input
+          id="listing_url"
+          name="listing_url"
+          type="url"
+          placeholder="https://..."
+          className="w-56 rounded border border-gray-300 px-2 py-1 text-sm"
         />
       </div>
       <button

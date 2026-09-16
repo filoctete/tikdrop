@@ -46,3 +46,24 @@ def test_build_quick_score_input_defaults_creative_to_neutral():
 
     assert result.creative.demo_video_feasibility == 5.0
     assert result.creative.ugc_potential == 5.0
+
+
+def test_build_quick_score_input_passes_through_listing_url():
+    result = build_quick_score_input(
+        name="widget",
+        trend_input=_trend(),
+        product_cost=5.0,
+        sale_price=15.0,
+        weight_grams=100,
+        listing_url="https://www.aliexpress.com/item/12345.html",
+    )
+
+    assert result.supplier.listing_url == "https://www.aliexpress.com/item/12345.html"
+
+
+def test_build_quick_score_input_defaults_listing_url_to_none():
+    result = build_quick_score_input(
+        name="widget", trend_input=_trend(), product_cost=5.0, sale_price=15.0, weight_grams=100
+    )
+
+    assert result.supplier.listing_url is None

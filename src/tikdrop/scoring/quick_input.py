@@ -5,6 +5,8 @@ they're filled with explicit neutral placeholders - callers should treat any res
 "test"/"watch" recommendation as provisional until those are replaced with real research.
 """
 
+from typing import Optional
+
 from tikdrop.compliance import suggest_risk_compliance
 from tikdrop.schemas.creative import CreativeInput
 from tikdrop.schemas.logistics import LogisticsInput
@@ -31,6 +33,7 @@ def build_quick_score_input(
     demo_video_feasibility: float = 5.0,
     ugc_potential: float = 5.0,
     avg_shipping_days: float = 10.0,
+    listing_url: Optional[str] = None,
 ) -> ProductScoreInput:
     return ProductScoreInput(
         product_name=name,
@@ -48,6 +51,7 @@ def build_quick_score_input(
             returns_cost_estimate=1.0,
         ),
         supplier=SupplierInput(
+            listing_url=listing_url,
             identity_verified=True,
             dropshipping_confirmed=True,
             neutral_packaging_possible=True,
