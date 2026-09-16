@@ -11,6 +11,7 @@ real supplier cost and enter it (idea.pdf/development_guide.pdf are both explici
 PT competition and supplier reliability can never be assumed away).
 """
 
+import re
 from typing import List
 from urllib.parse import quote_plus
 
@@ -29,10 +30,18 @@ SEED_TERMS = [
 ]
 
 # A rising query only gets checked against real Trends history if it looks like a plausible
-# product name (2-5 words) - filters out both single generic seed echoes and long noisy
-# long-tail junk queries pytrends sometimes returns.
+# *specific product* name (2-5 words) rather than a listicle/category search - e.g. "best
+# kitchen gadgets" or "kitchen gadgets 2026" are searches FOR a roundup of many different
+# products, not a single sourceable item, and would just waste a human's click.
 _MIN_QUERY_WORDS = 2
 _MAX_QUERY_WORDS = 5
+
+_LISTICLE_WORDS = {
+    "best", "top", "good", "great", "gift", "gifts", "idea", "ideas", "review", "reviews",
+    "vs", "versus", "cheap", "cheapest", "under", "guide", "list", "ways", "tips", "set", "sets",
+    "how", "why", "what", "popular", "trending", "essential", "essentials", "must", "need", "needs",
+}
+_YEAR_RE = re.compile(r"\b(19|20)\d{2}\b")
 
 # Minimum real evidence before a candidate is worth a human's time: enough days with measurable
 # interest and enough distinct weeks (not just one viral burst) - same bar that turned up
@@ -52,6 +61,21 @@ def research_links(candidate_key: str) -> List[dict]:
     ]
 
 
+def _looks_like_a_specific_product(query: str, seed: str) -> bool:
+    words = query.lower().split()
+    if not (_MIN_QUERY_WORDS <= len(words) <= _MAX_QUERY_WORDS):
+        return False
+    if any(w.strip(".,!?") in _LISTICLE_WORDS for w in words):
+        return False
+    if _YEAR_RE.search(query):
+        return False
+    # a bare plural/echo of the seed category itself ("kitchen gadgets") is still a category,
+    # not a specific product
+    if query.lower().rstrip("s") == seed.lower().rstrip("s"):
+        return False
+    return True
+
+
 def _rising_queries_for_seed(seed: str) -> List[str]:
     from pytrends.request import TrendReq
 
@@ -62,12 +86,7 @@ def _rising_queries_for_seed(seed: str) -> List[str]:
     if rising is None:
         return []
 
-    queries = []
-    for query in rising["query"].tolist():
-        word_count = len(query.split())
-        if _MIN_QUERY_WORDS <= word_count <= _MAX_QUERY_WORDS:
-            queries.append(query)
-    return queries
+    return [q for q in rising["query"].tolist() if _looks_like_a_specific_product(q, seed)]
 
 
 def discover_candidates(store: SignalStore) -> List[str]:

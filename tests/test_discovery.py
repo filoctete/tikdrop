@@ -1,7 +1,7 @@
 import pandas as pd
 import pytest
 
-from tikdrop.discovery import discover_candidates, research_links
+from tikdrop.discovery import _looks_like_a_specific_product, discover_candidates, research_links
 from tikdrop.ingestion.store import SignalStore
 from tikdrop.schemas.trend import RawSignal
 
@@ -13,6 +13,25 @@ def test_research_links_are_well_formed_urls():
     assert "AliExpress" in labels
     assert all(l["url"].startswith("https://") for l in links)
     assert all("heated+gloves" in l["url"] or "heated%20gloves" in l["url"] for l in links)
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "best kitchen gadgets",  # listicle word "best"
+        "kitchen gadgets 2026",  # contains a year
+        "kitchen gadget set",  # "set" = a bundle, not one product
+        "top gift ideas",  # multiple listicle words
+        "kitchen gadgets",  # just the plural of the seed category itself
+    ],
+)
+def test_rejects_listicle_and_category_style_queries(query):
+    assert _looks_like_a_specific_product(query, seed="kitchen gadget") is False
+
+
+def test_accepts_a_plausible_specific_product_name():
+    assert _looks_like_a_specific_product("heated gloves", seed="gadget") is True
+    assert _looks_like_a_specific_product("touchless soap dispenser", seed="gadget") is True
 
 
 def _fake_signals(n_days: int):
