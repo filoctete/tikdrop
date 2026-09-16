@@ -158,7 +158,38 @@ def quick_score(req: QuickScoreRequest, store: SignalStore = Depends(get_store))
 
     result = ProductScoringEngine.score(product_input)
     store.save_score_result(req.name, result, product_input=product_input)
+    store.mark_discovered_candidate_completed(req.name)
     return result
+
+
+class DiscoveredCandidate(BaseModel):
+    candidate_key: str
+    discovered_at: str
+    trend_days: int
+    weeks_sustained: int
+    research_links: List[dict]
+    status: str
+
+
+class DiscoveryRunResult(BaseModel):
+    discovered: List[str]
+
+
+@app.get("/discovery/candidates", response_model=List[DiscoveredCandidate])
+def list_discovered_candidates(status: str = "needs_input", store: SignalStore = Depends(get_store)):
+    return store.list_discovered_candidates(status=status)
+
+
+@app.post("/discovery/run", response_model=DiscoveryRunResult)
+def run_discovery(store: SignalStore = Depends(get_store)):
+    """Hourly-cron entry point (see .github/workflows/discover.yml) - finds real, evidence-backed
+    trend candidates and queues them for a human to add cost/price/weight. Never auto-scores or
+    auto-publishes anything (see tikdrop/discovery.py docstring for why).
+    """
+    from tikdrop.discovery import discover_candidates
+
+    discovered = discover_candidates(store)
+    return DiscoveryRunResult(discovered=discovered)
 
 
 @app.post("/suppliers/vat-check")

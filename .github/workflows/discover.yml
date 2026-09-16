@@ -1,0 +1,17 @@
+name: Hourly product discovery
+
+on:
+  schedule:
+    - cron: "0 * * * *"
+  workflow_dispatch: {}
+
+jobs:
+  discover:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger discovery run
+        run: |
+          curl -sf -X POST https://tikdrop.onrender.com/discovery/run \
+            --max-time 180 \
+            -o response.json
+          cat response.json

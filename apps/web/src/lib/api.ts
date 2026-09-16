@@ -145,6 +145,26 @@ export async function createCheckoutSession(candidateKey: string): Promise<{ che
   return res.json();
 }
 
+export interface ResearchLink {
+  label: string;
+  url: string;
+}
+
+export interface DiscoveredCandidate {
+  candidate_key: string;
+  discovered_at: string;
+  trend_days: number;
+  weeks_sustained: number;
+  research_links: ResearchLink[];
+  status: string;
+}
+
+export async function listDiscoveredCandidates(): Promise<DiscoveredCandidate[]> {
+  const res = await fetch(`${API_URL}/discovery/candidates`, { cache: "no-store" });
+  if (!res.ok) throw new Error(`Failed to fetch discovered candidates: ${res.status}`);
+  return res.json();
+}
+
 export async function checkVat(req: VatCheckRequest): Promise<VatCheckResult> {
   const res = await fetch(`${API_URL}/suppliers/vat-check`, {
     method: "POST",

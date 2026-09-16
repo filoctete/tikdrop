@@ -1,7 +1,8 @@
 import Link from "next/link";
-import { listOpportunities } from "@/lib/api";
+import { listOpportunities, listDiscoveredCandidates } from "@/lib/api";
 import StatusBadge from "@/components/StatusBadge";
 import QuickScoreForm from "@/components/QuickScoreForm";
+import CompleteCandidateForm from "@/components/CompleteCandidateForm";
 
 export default async function Home({
   searchParams,
@@ -9,7 +10,10 @@ export default async function Home({
   searchParams: Promise<{ status?: string }>;
 }) {
   const { status } = await searchParams;
-  const opportunities = await listOpportunities(status);
+  const [opportunities, discovered] = await Promise.all([
+    listOpportunities(status),
+    listDiscoveredCandidates(),
+  ]);
 
   const filters = [
     { label: "All", value: undefined },
@@ -24,6 +28,42 @@ export default async function Home({
       <p className="mb-6 text-sm text-gray-500">
         Product Intelligence candidates, ordered by score.
       </p>
+
+      {discovered.length > 0 && (
+        <section className="mb-8">
+          <h2 className="mb-1 text-lg font-semibold">Discovered - needs your input</h2>
+          <p className="mb-3 text-xs text-gray-500">
+            Found automatically from real Google Trends signal. Open a research link, find the real
+            supplier cost, then fill in the 3 fields to score it.
+          </p>
+          <div className="space-y-3">
+            {discovered.map((d) => (
+              <div key={d.candidate_key} className="rounded-lg border border-amber-200 bg-amber-50 p-4">
+                <div className="mb-1 flex items-baseline justify-between">
+                  <span className="font-semibold">{d.candidate_key}</span>
+                  <span className="text-xs text-gray-500">
+                    {d.trend_days} days with interest, {d.weeks_sustained} weeks sustained
+                  </span>
+                </div>
+                <div className="mb-3 flex flex-wrap gap-3 text-sm">
+                  {d.research_links.map((l) => (
+                    <a
+                      key={l.label}
+                      href={l.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-blue-600 hover:underline"
+                    >
+                      {l.label} ↗
+                    </a>
+                  ))}
+                </div>
+                <CompleteCandidateForm candidateKey={d.candidate_key} />
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
       <QuickScoreForm />
 

@@ -5,6 +5,7 @@ deploying the dashboard for real. development_guide.pdf section 6: keep origin +
 every signal, for audit and reprocessing.
 """
 
+import json
 import os
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -54,6 +55,17 @@ opportunities = Table(
     Column("result_json", Text, nullable=False),
     Column("input_json", Text),
     Column("store_copy_json", Text),
+)
+
+discovered_candidates = Table(
+    "discovered_candidates",
+    metadata,
+    Column("candidate_key", String, primary_key=True),
+    Column("discovered_at", DateTime, nullable=False),
+    Column("trend_days", Integer, nullable=False),
+    Column("weeks_sustained", Integer, nullable=False),
+    Column("research_links_json", Text, nullable=False),
+    Column("status", String, nullable=False),
 )
 
 
@@ -255,6 +267,72 @@ class SignalStore:
         if row is None or row[0] is None:
             return None
         return StoreCopy.model_validate_json(row[0])
+
+    def save_discovered_candidate(
+        self,
+        candidate_key: str,
+        trend_days: int,
+        weeks_sustained: int,
+        research_links: List[dict],
+        now: datetime = None,
+    ) -> None:
+        now = now or datetime.now(timezone.utc)
+        values = dict(
+            discovered_at=_naive_utc(now),
+            trend_days=trend_days,
+            weeks_sustained=weeks_sustained,
+            research_links_json=json.dumps(research_links),
+            status="needs_input",
+        )
+        with self._engine.begin() as conn:
+            existing = conn.execute(
+                select(discovered_candidates.c.candidate_key).where(
+                    discovered_candidates.c.candidate_key == candidate_key
+                )
+            ).fetchone()
+            if existing:
+                conn.execute(
+                    update(discovered_candidates)
+                    .where(discovered_candidates.c.candidate_key == candidate_key)
+                    .values(**values)
+                )
+            else:
+                conn.execute(insert(discovered_candidates).values(candidate_key=candidate_key, **values))
+
+    def list_discovered_candidates(self, status: str = "needs_input") -> List[dict]:
+        stmt = select(discovered_candidates).order_by(discovered_candidates.c.discovered_at.desc())
+        if status:
+            stmt = stmt.where(discovered_candidates.c.status == status)
+        with self._engine.connect() as conn:
+            rows = conn.execute(stmt).mappings().fetchall()
+        return [
+            {
+                **{k: v for k, v in dict(r).items() if k != "research_links_json"},
+                "discovered_at": r["discovered_at"].strftime("%Y-%m-%d %H:%M:%S"),
+                "research_links": json.loads(r["research_links_json"]),
+            }
+            for r in rows
+        ]
+
+    def is_known_candidate(self, candidate_key: str) -> bool:
+        with self._engine.connect() as conn:
+            in_opportunities = conn.execute(
+                select(opportunities.c.candidate_key).where(opportunities.c.candidate_key == candidate_key)
+            ).fetchone()
+            in_discovered = conn.execute(
+                select(discovered_candidates.c.candidate_key).where(
+                    discovered_candidates.c.candidate_key == candidate_key
+                )
+            ).fetchone()
+        return in_opportunities is not None or in_discovered is not None
+
+    def mark_discovered_candidate_completed(self, candidate_key: str) -> None:
+        with self._engine.begin() as conn:
+            conn.execute(
+                update(discovered_candidates)
+                .where(discovered_candidates.c.candidate_key == candidate_key)
+                .values(status="completed")
+            )
 
     def close(self) -> None:
         self._engine.dispose()

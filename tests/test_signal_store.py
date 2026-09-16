@@ -186,3 +186,44 @@ def test_store_copy_roundtrips_and_defaults_to_none():
     assert loaded is not None
     assert loaded.title == "Widget"
     assert loaded.benefits == ["Fast", "Reliable"]
+
+
+def test_discovered_candidate_lifecycle():
+    store = SignalStore(db_path=":memory:")
+
+    assert store.is_known_candidate("magic gadget") is False
+    assert store.list_discovered_candidates() == []
+
+    links = [{"label": "AliExpress", "url": "https://example.com"}]
+    store.save_discovered_candidate("magic gadget", trend_days=20, weeks_sustained=4, research_links=links)
+
+    assert store.is_known_candidate("magic gadget") is True
+
+    discovered = store.list_discovered_candidates()
+    assert len(discovered) == 1
+    assert discovered[0]["candidate_key"] == "magic gadget"
+    assert discovered[0]["trend_days"] == 20
+    assert discovered[0]["research_links"] == links
+
+    # re-discovering the same candidate updates in place, not duplicates
+    store.save_discovered_candidate("magic gadget", trend_days=25, weeks_sustained=5, research_links=links)
+    assert len(store.list_discovered_candidates()) == 1
+    assert store.list_discovered_candidates()[0]["trend_days"] == 25
+
+    store.mark_discovered_candidate_completed("magic gadget")
+    assert store.list_discovered_candidates() == []
+    assert store.list_discovered_candidates(status="completed")[0]["candidate_key"] == "magic gadget"
+
+
+def test_is_known_candidate_true_for_scored_opportunity():
+    store = SignalStore(db_path=":memory:")
+    result = ProductScoreResult(
+        product_name="widget",
+        dimensions={"trend": DimensionScore(raw_score=8, weight=0.2, weighted_contribution=1.6)},
+        total_score=7.5,
+        recommendation="test",
+        recommendation_reason="looks good",
+    )
+    store.save_score_result("widget", result)
+
+    assert store.is_known_candidate("widget") is True
