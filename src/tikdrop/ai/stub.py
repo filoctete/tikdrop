@@ -1,5 +1,7 @@
 from typing import Dict, Sequence
 
+from tikdrop.schemas.store import StoreCopy
+
 
 class StubAIProvider:
     """Placeholder implementation of AIProvider: no external API calls, no model chosen yet.
@@ -17,3 +19,12 @@ class StubAIProvider:
 
     def extract_product_attributes(self, raw_text: str) -> Dict[str, str]:
         return {}
+
+    def generate_store_copy(self, product_name: str) -> StoreCopy:
+        title = product_name.strip().title()
+        return StoreCopy(
+            title=title,
+            tagline=f"Discover the {title}.",
+            description=f"The {title} - review and rewrite this placeholder copy before publishing.",
+            benefits=["Placeholder benefit - edit before publishing"],
+        )

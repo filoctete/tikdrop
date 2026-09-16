@@ -157,3 +157,32 @@ def test_get_candidate_input_roundtrips_and_defaults_to_none():
     assert loaded is not None
     assert loaded.costs.sale_price == 20
     assert loaded.portugal_opportunity.pt_competitor_count == 3
+
+
+def test_store_copy_roundtrips_and_defaults_to_none():
+    from tikdrop.schemas.store import StoreCopy
+
+    store = SignalStore(db_path=":memory:")
+    result = ProductScoreResult(
+        product_name="widget",
+        dimensions={"trend": DimensionScore(raw_score=8, weight=0.2, weighted_contribution=1.6)},
+        total_score=7.5,
+        recommendation="test",
+        recommendation_reason="looks good",
+    )
+    store.save_score_result("widget", result)
+
+    assert store.get_store_copy("widget") is None
+
+    copy = StoreCopy(
+        title="Widget",
+        tagline="The widget you need",
+        description="A great widget.",
+        benefits=["Fast", "Reliable"],
+    )
+    store.save_store_copy("widget", copy)
+
+    loaded = store.get_store_copy("widget")
+    assert loaded is not None
+    assert loaded.title == "Widget"
+    assert loaded.benefits == ["Fast", "Reliable"]

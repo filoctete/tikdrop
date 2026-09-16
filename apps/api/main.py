@@ -14,6 +14,8 @@ from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
+from tikdrop.ai import StubAIProvider
+from tikdrop.ai.provider import AIProvider
 from tikdrop.ingestion import SignalStore, ViesError, check_vat, fetch_google_trends_signal
 from tikdrop.schemas.score import ProductScoreInput, ProductScoreResult
 from tikdrop.scoring import ProductScoringEngine, build_quick_score_input
@@ -83,6 +85,33 @@ class VatCheckRequest(BaseModel):
     vat_number: str
 
 
+class StoreProductSummary(BaseModel):
+    candidate_key: str
+    title: str
+    sale_price: float
+
+
+class StoreProductDetail(BaseModel):
+    candidate_key: str
+    title: str
+    tagline: str
+    description: str
+    benefits: List[str]
+    sale_price: float
+
+
+class CheckoutSessionResponse(BaseModel):
+    checkout_url: str
+
+
+def _get_ai_provider() -> AIProvider:
+    if os.environ.get("GROQ_API_KEY"):
+        from tikdrop.ai.groq_provider import GroqAIProvider
+
+        return GroqAIProvider()
+    return StubAIProvider()
+
+
 @app.get("/health")
 def health() -> dict:
     return {"status": "ok"}
@@ -138,3 +167,96 @@ def vat_check(req: VatCheckRequest):
         return check_vat(req.country_code, req.vat_number)
     except ViesError as exc:
         raise HTTPException(status_code=502, detail=str(exc))
+
+
+# --- Public storefront (development_guide.pdf section 12, Store Generator) ---
+# Read-only product presentation only - no checkout/payments here, see apps/web/src/app/store.
+
+
+@app.get("/store/products", response_model=List[StoreProductSummary])
+def list_store_products(store: SignalStore = Depends(get_store)):
+    items = []
+    for o in store.list_opportunities(status="queued_for_store"):
+        key = o["candidate_key"]
+        candidate_input = store.get_candidate_input(key)
+        if candidate_input is None:
+            continue
+        copy = store.get_store_copy(key)
+        title = copy.title if copy else key.title()
+        items.append(StoreProductSummary(candidate_key=key, title=title, sale_price=candidate_input.costs.sale_price))
+    return items
+
+
+@app.get("/store/products/{candidate_key}", response_model=StoreProductDetail)
+def get_store_product(candidate_key: str, store: SignalStore = Depends(get_store)):
+    candidate_input = store.get_candidate_input(candidate_key)
+    opportunity = store.get_opportunity_detail(candidate_key)
+    if candidate_input is None or opportunity is None or opportunity.recommendation != "test":
+        raise HTTPException(status_code=404, detail="Product not found")
+
+    copy = store.get_store_copy(candidate_key)
+    if copy is None:
+        ai = _get_ai_provider()
+        try:
+            copy = ai.generate_store_copy(candidate_key)
+        except Exception as exc:
+            raise HTTPException(status_code=502, detail=f"Could not generate store copy: {exc}")
+        finally:
+            close = getattr(ai, "close", None)
+            if close:
+                close()
+        store.save_store_copy(candidate_key, copy)
+
+    return StoreProductDetail(
+        candidate_key=candidate_key,
+        title=copy.title,
+        tagline=copy.tagline,
+        description=copy.description,
+        benefits=copy.benefits,
+        sale_price=candidate_input.costs.sale_price,
+    )
+
+
+@app.post("/store/products/{candidate_key}/checkout", response_model=CheckoutSessionResponse)
+def create_checkout_session(candidate_key: str, store: SignalStore = Depends(get_store)):
+    """Creates a Stripe-hosted Checkout Session and returns its URL. Card data goes straight to
+    Stripe's own page - it never touches this server (per development_guide.pdf section 23:
+    don't build checkout from scratch; this keeps us out of PCI-DSS scope almost entirely).
+    """
+    stripe_secret_key = os.environ.get("STRIPE_SECRET_KEY")
+    if not stripe_secret_key:
+        raise HTTPException(status_code=503, detail="Payments are not configured yet (STRIPE_SECRET_KEY missing).")
+
+    candidate_input = store.get_candidate_input(candidate_key)
+    opportunity = store.get_opportunity_detail(candidate_key)
+    if candidate_input is None or opportunity is None or opportunity.recommendation != "test":
+        raise HTTPException(status_code=404, detail="Product not found")
+
+    copy = store.get_store_copy(candidate_key)
+    title = copy.title if copy else candidate_key.title()
+
+    import stripe
+
+    stripe.api_key = stripe_secret_key
+    frontend_url = os.environ.get("FRONTEND_URL", "http://localhost:3000")
+
+    try:
+        session = stripe.checkout.Session.create(
+            mode="payment",
+            line_items=[
+                {
+                    "price_data": {
+                        "currency": "eur",
+                        "unit_amount": round(candidate_input.costs.sale_price * 100),
+                        "product_data": {"name": title},
+                    },
+                    "quantity": 1,
+                }
+            ],
+            success_url=f"{frontend_url}/store/{candidate_key}?success=true",
+            cancel_url=f"{frontend_url}/store/{candidate_key}?canceled=true",
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Could not start checkout: {exc}")
+
+    return CheckoutSessionResponse(checkout_url=session.url)

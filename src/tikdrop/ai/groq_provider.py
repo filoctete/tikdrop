@@ -19,6 +19,8 @@ try:
 except ImportError as exc:  # pragma: no cover
     raise ImportError('GroqAIProvider needs httpx. Install with: pip install -e ".[groq]"') from exc
 
+from tikdrop.schemas.store import StoreCopy
+
 _DEFAULT_MODEL = "openai/gpt-oss-20b"
 _API_URL = "https://api.groq.com/openai/v1/chat/completions"
 
@@ -92,6 +94,26 @@ class GroqAIProvider:
         except json.JSONDecodeError as exc:
             raise AIProviderError(f"Could not parse attributes JSON from: {content}") from exc
         return {str(k): str(v) for k, v in attrs.items()}
+
+    def generate_store_copy(self, product_name: str) -> StoreCopy:
+        prompt = (
+            "Write short, honest marketing copy for this dropshipping product listing. No "
+            "exaggerated claims, no medical/health claims, no invented facts.\n"
+            f"Product: {product_name}\n"
+            "Respond with exactly this JSON shape and no other keys or text: "
+            '{"title": "...", "tagline": "...", "description": "...", "benefits": ["...", "...", "..."]}'
+        )
+        content = self._chat([{"role": "user", "content": prompt}], json_mode=True)
+        try:
+            data = json.loads(content)
+            return StoreCopy(
+                title=str(data["title"]),
+                tagline=str(data["tagline"]),
+                description=str(data["description"]),
+                benefits=[str(b) for b in data["benefits"]],
+            )
+        except (json.JSONDecodeError, KeyError, TypeError) as exc:
+            raise AIProviderError(f"Could not parse store copy from: {content}") from exc
 
     def close(self) -> None:
         self._client.close()

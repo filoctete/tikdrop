@@ -34,6 +34,7 @@ api = [
     "uvicorn[standard]>=0.29",
     "psycopg[binary]>=3.1",
     "pytrends>=4.9",
+    "stripe>=10.0",
 ]
 all = [
     "tikdrop[dev,groq,ingestion,api]",

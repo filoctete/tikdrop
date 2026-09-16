@@ -1,5 +1,7 @@
 from typing import Dict, Protocol, Sequence
 
+from tikdrop.schemas.store import StoreCopy
+
 
 class AIProvider(Protocol):
     """Abstraction layer so the underlying model/vendor can be swapped without touching callers
@@ -19,4 +21,8 @@ class AIProvider(Protocol):
 
     def extract_product_attributes(self, raw_text: str) -> Dict[str, str]:
         """Pull structured attributes (name, category, materials, ...) out of free text."""
+        ...
+
+    def generate_store_copy(self, product_name: str) -> StoreCopy:
+        """Draft a public product page - a human should review before it goes live."""
         ...

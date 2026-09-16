@@ -10,10 +10,11 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import List, Optional, Sequence
 
-from sqlalchemy import Column, DateTime, Float, Integer, MetaData, String, Table, Text, create_engine, insert, select, update
+from sqlalchemy import Column, DateTime, Float, Integer, MetaData, String, Table, Text, create_engine, inspect, insert, select, text, update
 from sqlalchemy.engine import Engine
 
 from tikdrop.schemas.score import ProductScoreInput, ProductScoreResult
+from tikdrop.schemas.store import StoreCopy
 from tikdrop.schemas.trend import RawSignal, TrendInput
 
 DEFAULT_SQLITE_PATH = str(Path(__file__).resolve().parents[3] / "tikdrop.db")
@@ -52,6 +53,7 @@ opportunities = Table(
     Column("scored_at", DateTime, nullable=False),
     Column("result_json", Text, nullable=False),
     Column("input_json", Text),
+    Column("store_copy_json", Text),
 )
 
 
@@ -86,10 +88,28 @@ def _make_engine(db_path: Optional[str], database_url: Optional[str]) -> Engine:
     return create_engine(url, connect_args=connect_args, **kwargs)
 
 
+def _ensure_new_columns(engine: Engine) -> None:
+    # metadata.create_all() only creates tables that don't exist yet - it silently skips
+    # adding new columns to a table that's already there (e.g. an existing hosted Postgres
+    # database from before a column was added here). This is a deliberately minimal
+    # poor-man's migration for that one case, not a general schema-migration system.
+    inspector = inspect(engine)
+    if "opportunities" not in inspector.get_table_names():
+        return
+    existing = {c["name"] for c in inspector.get_columns("opportunities")}
+    missing = [c for c in ("input_json", "store_copy_json") if c not in existing]
+    if not missing:
+        return
+    with engine.begin() as conn:
+        for column in missing:
+            conn.execute(text(f"ALTER TABLE opportunities ADD COLUMN {column} TEXT"))
+
+
 class SignalStore:
     def __init__(self, db_path: Optional[str] = None, database_url: Optional[str] = None) -> None:
         self._engine = _make_engine(db_path, database_url)
         metadata.create_all(self._engine)
+        _ensure_new_columns(self._engine)
 
     def save(self, candidate_key: str, signals: Sequence[RawSignal], captured_at: datetime = None) -> None:
         if not signals:
@@ -218,6 +238,23 @@ class SignalStore:
         if row is None or row[0] is None:
             return None
         return ProductScoreInput.model_validate_json(row[0])
+
+    def save_store_copy(self, candidate_key: str, copy: StoreCopy) -> None:
+        with self._engine.begin() as conn:
+            conn.execute(
+                update(opportunities)
+                .where(opportunities.c.candidate_key == candidate_key)
+                .values(store_copy_json=copy.model_dump_json())
+            )
+
+    def get_store_copy(self, candidate_key: str) -> Optional[StoreCopy]:
+        with self._engine.connect() as conn:
+            row = conn.execute(
+                select(opportunities.c.store_copy_json).where(opportunities.c.candidate_key == candidate_key)
+            ).fetchone()
+        if row is None or row[0] is None:
+            return None
+        return StoreCopy.model_validate_json(row[0])
 
     def close(self) -> None:
         self._engine.dispose()

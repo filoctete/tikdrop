@@ -105,6 +105,46 @@ export async function quickScore(req: QuickScoreRequest): Promise<ProductScoreRe
   return res.json();
 }
 
+export interface StoreProductSummary {
+  candidate_key: string;
+  title: string;
+  sale_price: number;
+}
+
+export interface StoreProductDetail {
+  candidate_key: string;
+  title: string;
+  tagline: string;
+  description: string;
+  benefits: string[];
+  sale_price: number;
+}
+
+export async function listStoreProducts(): Promise<StoreProductSummary[]> {
+  const res = await fetch(`${API_URL}/store/products`, { cache: "no-store" });
+  if (!res.ok) throw new Error(`Failed to fetch store products: ${res.status}`);
+  return res.json();
+}
+
+export async function getStoreProduct(candidateKey: string): Promise<StoreProductDetail> {
+  const res = await fetch(`${API_URL}/store/products/${encodeURIComponent(candidateKey)}`, {
+    cache: "no-store",
+  });
+  if (!res.ok) throw new Error(`Failed to fetch store product: ${res.status}`);
+  return res.json();
+}
+
+export async function createCheckoutSession(candidateKey: string): Promise<{ checkout_url: string }> {
+  const res = await fetch(`${API_URL}/store/products/${encodeURIComponent(candidateKey)}/checkout`, {
+    method: "POST",
+  });
+  if (!res.ok) {
+    const detail = await res.text();
+    throw new Error(`Failed to start checkout: ${res.status} ${detail}`);
+  }
+  return res.json();
+}
+
 export async function checkVat(req: VatCheckRequest): Promise<VatCheckResult> {
   const res = await fetch(`${API_URL}/suppliers/vat-check`, {
     method: "POST",
