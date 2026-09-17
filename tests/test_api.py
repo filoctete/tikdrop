@@ -128,22 +128,33 @@ def test_store_product_detail_generates_and_caches_copy(client, db_path, monkeyp
     calls = []
 
     class FakeAI:
-        def generate_store_copy(self, product_name):
-            calls.append(product_name)
-            return StoreCopy(title="Widget", tagline="Great", description="A widget.", benefits=["Fast"])
+        def generate_store_copy(self, product_name, language="pt"):
+            calls.append((product_name, language))
+            title = f"Widget ({language})"
+            return StoreCopy(title=title, tagline="Great", description="A widget.", benefits=["Fast"])
 
     monkeypatch.setattr("apps.api.main._get_ai_provider", lambda: FakeAI())
 
-    first = client.get("/store/products/widget")
+    first = client.get("/store/products/widget?lang=pt")
     assert first.status_code == 200
-    assert first.json()["title"] == "Widget"
+    assert first.json()["title"] == "Widget (pt)"
     assert first.json()["sale_price"] == 25.0
     assert len(calls) == 1
 
-    # second call should use the cached copy, not call the AI again
-    second = client.get("/store/products/widget")
+    # second call for the same language should use the cached copy, not call the AI again
+    second = client.get("/store/products/widget?lang=pt")
     assert second.status_code == 200
     assert len(calls) == 1
+
+    # a different language is cached separately and does trigger a fresh generation
+    third = client.get("/store/products/widget?lang=en")
+    assert third.status_code == 200
+    assert third.json()["title"] == "Widget (en)"
+    assert len(calls) == 2
+
+    # an unsupported/typo'd language code falls back to the default instead of erroring
+    fourth = client.get("/store/products/widget?lang=xx")
+    assert fourth.status_code == 200
 
 
 def test_store_product_detail_404_for_unknown_or_unqueued(client, db_path):

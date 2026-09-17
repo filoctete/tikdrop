@@ -206,39 +206,52 @@ def vat_check(req: VatCheckRequest):
 # Read-only product presentation only - no checkout/payments here, see apps/web/src/app/store.
 
 
+@app.get("/store/languages")
+def list_store_languages():
+    from tikdrop.i18n import DEFAULT_LANGUAGE, SUPPORTED_LANGUAGES
+
+    return {"default": DEFAULT_LANGUAGE, "languages": SUPPORTED_LANGUAGES}
+
+
 @app.get("/store/products", response_model=List[StoreProductSummary])
-def list_store_products(store: SignalStore = Depends(get_store)):
+def list_store_products(lang: str = "pt", store: SignalStore = Depends(get_store)):
+    from tikdrop.i18n import normalize_language
+
+    lang = normalize_language(lang)
     items = []
     for o in store.list_opportunities(status="queued_for_store"):
         key = o["candidate_key"]
         candidate_input = store.get_candidate_input(key)
         if candidate_input is None:
             continue
-        copy = store.get_store_copy(key)
+        copy = store.get_store_copy(key, lang)
         title = copy.title if copy else key.title()
         items.append(StoreProductSummary(candidate_key=key, title=title, sale_price=candidate_input.costs.sale_price))
     return items
 
 
 @app.get("/store/products/{candidate_key}", response_model=StoreProductDetail)
-def get_store_product(candidate_key: str, store: SignalStore = Depends(get_store)):
+def get_store_product(candidate_key: str, lang: str = "pt", store: SignalStore = Depends(get_store)):
+    from tikdrop.i18n import normalize_language
+
+    lang = normalize_language(lang)
     candidate_input = store.get_candidate_input(candidate_key)
     opportunity = store.get_opportunity_detail(candidate_key)
     if candidate_input is None or opportunity is None or opportunity.recommendation != "test":
         raise HTTPException(status_code=404, detail="Product not found")
 
-    copy = store.get_store_copy(candidate_key)
+    copy = store.get_store_copy(candidate_key, lang)
     if copy is None:
         ai = _get_ai_provider()
         try:
-            copy = ai.generate_store_copy(candidate_key)
+            copy = ai.generate_store_copy(candidate_key, language=lang)
         except Exception as exc:
             raise HTTPException(status_code=502, detail=f"Could not generate store copy: {exc}")
         finally:
             close = getattr(ai, "close", None)
             if close:
                 close()
-        store.save_store_copy(candidate_key, copy)
+        store.save_store_copy(candidate_key, lang, copy)
 
     return StoreProductDetail(
         candidate_key=candidate_key,
@@ -251,11 +264,14 @@ def get_store_product(candidate_key: str, store: SignalStore = Depends(get_store
 
 
 @app.post("/store/products/{candidate_key}/checkout", response_model=CheckoutSessionResponse)
-def create_checkout_session(candidate_key: str, store: SignalStore = Depends(get_store)):
+def create_checkout_session(candidate_key: str, lang: str = "pt", store: SignalStore = Depends(get_store)):
     """Creates a Stripe-hosted Checkout Session and returns its URL. Card data goes straight to
     Stripe's own page - it never touches this server (per development_guide.pdf section 23:
     don't build checkout from scratch; this keeps us out of PCI-DSS scope almost entirely).
     """
+    from tikdrop.i18n import normalize_language
+
+    lang = normalize_language(lang)
     stripe_secret_key = os.environ.get("STRIPE_SECRET_KEY")
     if not stripe_secret_key:
         raise HTTPException(status_code=503, detail="Payments are not configured yet (STRIPE_SECRET_KEY missing).")
@@ -265,7 +281,7 @@ def create_checkout_session(candidate_key: str, store: SignalStore = Depends(get
     if candidate_input is None or opportunity is None or opportunity.recommendation != "test":
         raise HTTPException(status_code=404, detail="Product not found")
 
-    copy = store.get_store_copy(candidate_key)
+    copy = store.get_store_copy(candidate_key, lang)
     title = copy.title if copy else candidate_key.title()
 
     import stripe
@@ -286,8 +302,8 @@ def create_checkout_session(candidate_key: str, store: SignalStore = Depends(get
                     "quantity": 1,
                 }
             ],
-            success_url=f"{frontend_url}/store/{candidate_key}?success=true",
-            cancel_url=f"{frontend_url}/store/{candidate_key}?canceled=true",
+            success_url=f"{frontend_url}/store/{lang}/{candidate_key}?success=true",
+            cancel_url=f"{frontend_url}/store/{lang}/{candidate_key}?canceled=true",
         )
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"Could not start checkout: {exc}")

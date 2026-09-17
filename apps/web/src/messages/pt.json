@@ -1,0 +1,13 @@
+{
+  "storeTitle": "TikDrop",
+  "storeSubtitle": "Produtos que encontrámos, validámos e em que confiamos.",
+  "noProducts": "Ainda não há produtos publicados - volta em breve.",
+  "photoComingSoon": "Foto brevemente disponível",
+  "backToAll": "Voltar a todos os produtos",
+  "buyNow": "Comprar agora",
+  "redirecting": "A redirecionar para pagamento seguro...",
+  "paymentsNotSetUp": "Os pagamentos ainda não estão configurados - volta em breve.",
+  "paymentNote": "Pagamento processado com segurança pela Stripe - nunca vemos os dados do teu cartão.",
+  "thankYou": "Obrigado! O teu pagamento foi concluído com sucesso.",
+  "checkoutCanceled": "O pagamento foi cancelado - o teu cartão não foi cobrado."
+}

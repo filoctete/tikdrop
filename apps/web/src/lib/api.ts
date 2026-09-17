@@ -121,22 +121,22 @@ export interface StoreProductDetail {
   sale_price: number;
 }
 
-export async function listStoreProducts(): Promise<StoreProductSummary[]> {
-  const res = await fetch(`${API_URL}/store/products`, { cache: "no-store" });
+export async function listStoreProducts(lang: string): Promise<StoreProductSummary[]> {
+  const res = await fetch(`${API_URL}/store/products?lang=${lang}`, { cache: "no-store" });
   if (!res.ok) throw new Error(`Failed to fetch store products: ${res.status}`);
   return res.json();
 }
 
-export async function getStoreProduct(candidateKey: string): Promise<StoreProductDetail> {
-  const res = await fetch(`${API_URL}/store/products/${encodeURIComponent(candidateKey)}`, {
+export async function getStoreProduct(candidateKey: string, lang: string): Promise<StoreProductDetail> {
+  const res = await fetch(`${API_URL}/store/products/${encodeURIComponent(candidateKey)}?lang=${lang}`, {
     cache: "no-store",
   });
   if (!res.ok) throw new Error(`Failed to fetch store product: ${res.status}`);
   return res.json();
 }
 
-export async function createCheckoutSession(candidateKey: string): Promise<{ checkout_url: string }> {
-  const res = await fetch(`${API_URL}/store/products/${encodeURIComponent(candidateKey)}/checkout`, {
+export async function createCheckoutSession(candidateKey: string, lang: string): Promise<{ checkout_url: string }> {
+  const res = await fetch(`${API_URL}/store/products/${encodeURIComponent(candidateKey)}/checkout?lang=${lang}`, {
     method: "POST",
   });
   if (!res.ok) {

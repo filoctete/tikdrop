@@ -20,11 +20,13 @@ class StubAIProvider:
     def extract_product_attributes(self, raw_text: str) -> Dict[str, str]:
         return {}
 
-    def generate_store_copy(self, product_name: str) -> StoreCopy:
+    def generate_store_copy(self, product_name: str, language: str = "pt") -> StoreCopy:
+        # No real translation without a model - keeps English placeholder text regardless of
+        # `language`, tagged so it's obvious this still needs a human (or GroqAIProvider).
         title = product_name.strip().title()
         return StoreCopy(
             title=title,
-            tagline=f"Discover the {title}.",
+            tagline=f"Discover the {title}. [{language} placeholder - not translated]",
             description=f"The {title} - review and rewrite this placeholder copy before publishing.",
             benefits=["Placeholder benefit - edit before publishing"],
         )

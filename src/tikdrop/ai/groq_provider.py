@@ -95,10 +95,15 @@ class GroqAIProvider:
             raise AIProviderError(f"Could not parse attributes JSON from: {content}") from exc
         return {str(k): str(v) for k, v in attrs.items()}
 
-    def generate_store_copy(self, product_name: str) -> StoreCopy:
+    def generate_store_copy(self, product_name: str, language: str = "pt") -> StoreCopy:
+        from tikdrop.i18n import SUPPORTED_LANGUAGES, normalize_language
+
+        language_name = SUPPORTED_LANGUAGES[normalize_language(language)]["english_name"]
         prompt = (
-            "Write short, honest marketing copy for this dropshipping product listing. No "
-            "exaggerated claims, no medical/health claims, no invented facts.\n"
+            f"Write short, honest marketing copy in {language_name} for this dropshipping "
+            "product listing. No exaggerated claims, no medical/health claims, no invented "
+            "facts. All text (title, tagline, description, benefits) must be in "
+            f"{language_name}, not English, unless that is the requested language.\n"
             f"Product: {product_name}\n"
             "Respond with exactly this JSON shape and no other keys or text: "
             '{"title": "...", "tagline": "...", "description": "...", "benefits": ["...", "...", "..."]}'

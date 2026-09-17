@@ -251,22 +251,30 @@ class SignalStore:
             return None
         return ProductScoreInput.model_validate_json(row[0])
 
-    def save_store_copy(self, candidate_key: str, copy: StoreCopy) -> None:
+    def save_store_copy(self, candidate_key: str, language: str, copy: StoreCopy) -> None:
+        # store_copy_json holds one JSON object keyed by language code, e.g. {"pt": {...}, "en": {...}}
         with self._engine.begin() as conn:
+            row = conn.execute(
+                select(opportunities.c.store_copy_json).where(opportunities.c.candidate_key == candidate_key)
+            ).fetchone()
+            by_language = json.loads(row[0]) if row and row[0] else {}
+            by_language[language] = json.loads(copy.model_dump_json())
             conn.execute(
                 update(opportunities)
                 .where(opportunities.c.candidate_key == candidate_key)
-                .values(store_copy_json=copy.model_dump_json())
+                .values(store_copy_json=json.dumps(by_language))
             )
 
-    def get_store_copy(self, candidate_key: str) -> Optional[StoreCopy]:
+    def get_store_copy(self, candidate_key: str, language: str) -> Optional[StoreCopy]:
         with self._engine.connect() as conn:
             row = conn.execute(
                 select(opportunities.c.store_copy_json).where(opportunities.c.candidate_key == candidate_key)
             ).fetchone()
         if row is None or row[0] is None:
             return None
-        return StoreCopy.model_validate_json(row[0])
+        by_language = json.loads(row[0])
+        copy_dict = by_language.get(language)
+        return StoreCopy.model_validate(copy_dict) if copy_dict else None
 
     def save_discovered_candidate(
         self,

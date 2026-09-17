@@ -78,3 +78,29 @@ def test_generate_store_copy_raises_on_malformed_json(monkeypatch):
 
     with pytest.raises(AIProviderError):
         provider.generate_store_copy("widget")
+
+
+def test_generate_store_copy_puts_the_target_language_in_the_prompt(monkeypatch):
+    provider = _provider()
+    captured = {}
+
+    def fake_chat(messages, json_mode=False):
+        captured["prompt"] = messages[0]["content"]
+        return '{"title": "T", "tagline": "T", "description": "T", "benefits": []}'
+
+    monkeypatch.setattr(provider, "_chat", fake_chat)
+
+    provider.generate_store_copy("widget", language="es")
+
+    assert "Spanish" in captured["prompt"]
+
+
+def test_generate_store_copy_falls_back_to_default_for_unsupported_language(monkeypatch):
+    provider = _provider()
+    monkeypatch.setattr(
+        provider, "_chat", lambda messages, json_mode=False: '{"title": "T", "tagline": "T", "description": "T", "benefits": []}'
+    )
+
+    # should not raise even though "xx" isn't a supported language code
+    copy = provider.generate_store_copy("widget", language="xx")
+    assert copy.title == "T"

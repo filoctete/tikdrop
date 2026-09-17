@@ -172,20 +172,25 @@ def test_store_copy_roundtrips_and_defaults_to_none():
     )
     store.save_score_result("widget", result)
 
-    assert store.get_store_copy("widget") is None
+    assert store.get_store_copy("widget", "pt") is None
 
-    copy = StoreCopy(
-        title="Widget",
-        tagline="The widget you need",
-        description="A great widget.",
-        benefits=["Fast", "Reliable"],
-    )
-    store.save_store_copy("widget", copy)
+    pt_copy = StoreCopy(title="Widget PT", tagline="O widget que precisas", description="Um ótimo widget.", benefits=["Rápido"])
+    store.save_store_copy("widget", "pt", pt_copy)
 
-    loaded = store.get_store_copy("widget")
-    assert loaded is not None
-    assert loaded.title == "Widget"
-    assert loaded.benefits == ["Fast", "Reliable"]
+    en_copy = StoreCopy(title="Widget EN", tagline="The widget you need", description="A great widget.", benefits=["Fast"])
+    store.save_store_copy("widget", "en", en_copy)
+
+    loaded_pt = store.get_store_copy("widget", "pt")
+    assert loaded_pt is not None
+    assert loaded_pt.title == "Widget PT"
+
+    loaded_en = store.get_store_copy("widget", "en")
+    assert loaded_en is not None
+    assert loaded_en.title == "Widget EN"
+
+    # a language nobody has generated yet is None, not an error, and doesn't disturb the others
+    assert store.get_store_copy("widget", "es") is None
+    assert store.get_store_copy("widget", "pt").title == "Widget PT"
 
 
 def test_discovered_candidate_lifecycle():

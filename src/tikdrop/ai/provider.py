@@ -23,6 +23,7 @@ class AIProvider(Protocol):
         """Pull structured attributes (name, category, materials, ...) out of free text."""
         ...
 
-    def generate_store_copy(self, product_name: str) -> StoreCopy:
-        """Draft a public product page - a human should review before it goes live."""
+    def generate_store_copy(self, product_name: str, language: str = "pt") -> StoreCopy:
+        """Draft a public product page in the given language (see tikdrop.i18n for supported
+        codes) - a human should review before it goes live."""
         ...
